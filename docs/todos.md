@@ -22,7 +22,7 @@ Topics to discuss and turn into ADRs.
 ## Reliability & Concurrency
 
 - [x] **Concurrency model** — ADR 0006: WAL mode + busy_timeout, single aiosqlite connection
-- [ ] **Retry logic for failed processing** — max attempts, backoff, dead-letter state
+- [x] **Retry logic for failed processing** — ADR 0010: exponential backoff, retry_after in DB, MAX_ATTEMPTS configurable, failed = dead-letter
 - [ ] **Graceful shutdown** — how to drain in-flight workers before exit
 
 ## Observability
