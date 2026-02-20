@@ -12,7 +12,7 @@ Topics to discuss and turn into ADRs.
 
 - [x] **SQLite schema** — ADR 0004: single events table, UUID PK, status CHECK constraint, attempts+last_error (src/schema.sql)
 - [x] **Indexing strategy** — ADR 0004: implicit unique on idempotency_key + composite (status, created_at)
-- [ ] **Data retention / TTL** — how to expire old records (background job, SQLite triggers, soft delete)
+- [x] **Data retention / TTL** — ADR 0005: periodic background asyncio task, batched hard delete of terminal events, configurable via RETENTION_DAYS + CLEANUP_INTERVAL_HOURS
 
 ## API Design
 
@@ -21,7 +21,7 @@ Topics to discuss and turn into ADRs.
 
 ## Reliability & Concurrency
 
-- [ ] **Concurrency model** — SQLite write serialization, WAL mode, connection pooling
+- [x] **Concurrency model** — ADR 0006: WAL mode + busy_timeout, single aiosqlite connection
 - [ ] **Retry logic for failed processing** — max attempts, backoff, dead-letter state
 - [ ] **Graceful shutdown** — how to drain in-flight workers before exit
 
