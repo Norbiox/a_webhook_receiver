@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Deprecated by ADR 0012
+
+The cache was designed to avoid DB queries on duplicates. However, the API contract requires returning the **current status** of a duplicate event, which changes over time. A key-only cache cannot serve this — a DB query is always required. See ADR 0012.
 
 ## Context
 
