@@ -42,3 +42,4 @@ Clean, battle-tested, handles retry and scheduling well. Requires Redis as addit
 - **Horizontal scaling** is not supported in this design — multiple instances would duplicate the in-memory queue. The upgrade path is to replace `asyncio.Queue` with Redis Streams or a similar persistent queue and SQLite with Postgres.
 - **Throughput** is tunable via the number of worker coroutines (`WORKER_COUNT` env var).
 - **Backpressure** is surfaced to callers via 429; external systems are expected to retry with backoff.
+- **Graceful shutdown** is not implemented — on SIGTERM, in-flight workers are interrupted immediately. Events mid-processing remain as `processing` in SQLite and are re-enqueued on next startup. This is safe given the at-least-once guarantee and retry logic (ADR 0010).
