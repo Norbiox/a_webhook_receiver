@@ -10,8 +10,8 @@ Topics to discuss and turn into ADRs.
 
 ## Data Model
 
-- [ ] **SQLite schema** — table design: single table vs. events + processing_log, status enum values, timestamps
-- [ ] **Indexing strategy** — which columns to index (`idempotency_key`, `status`, `created_at`)
+- [x] **SQLite schema** — ADR 0004: single events table, UUID PK, status CHECK constraint, attempts+last_error (src/schema.sql)
+- [x] **Indexing strategy** — ADR 0004: implicit unique on idempotency_key + composite (status, created_at)
 - [ ] **Data retention / TTL** — how to expire old records (background job, SQLite triggers, soft delete)
 
 ## API Design
