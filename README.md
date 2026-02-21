@@ -57,7 +57,8 @@ All settings are read from environment variables:
 ## Running locally
 
 ```bash
-uv run uvicorn webhook_receiver.app:create_app --factory --host 0.0.0.0 --port 8000
+mise install
+start
 ```
 
 ## Running with Docker
@@ -65,6 +66,16 @@ uv run uvicorn webhook_receiver.app:create_app --factory --host 0.0.0.0 --port 8
 ```bash
 docker build -t webhook-receiver .
 docker run -p 8000:8000 -v webhook-data:/data webhook-receiver
+```
+
+## Load testing
+
+```bash
+# in terminal 1
+start
+
+# in terminal 2
+locust_1000_headless  # or locust_final_headless for 1000/min and realistic traffic mix
 ```
 
 ## API

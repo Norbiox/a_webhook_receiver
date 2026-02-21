@@ -20,6 +20,7 @@ dev = [
     "ruff>=0.8.0",
     "pre-commit>=4.0.0",
     "pytest-cov>=7.0.0",
+    "locust>=2.32.0",
 ]
 
 [build-system]
@@ -49,3 +50,8 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
+
+[dependency-groups]
+dev = [
+    "locust>=2.43.3",
+]
