@@ -1,116 +1,141 @@
 # webhook-receiver
 
 A prototype webhook receiver service built with FastAPI, asyncio, and SQLite.
+Prototyp webhook-receiver w FastAPI, asynctio i SQLite
 
-## Architecture
+## Metodologia pracy
 
-Incoming webhooks are persisted to SQLite before any processing begins (inbox pattern), guaranteeing **at-least-once** delivery even if the process crashes mid-flight.
+Na początek metodologia jaką przyjąłem, bo ona wiele wyjaśnia.
+
+- postanowiłem użyć Claude Code jako partnera w projektowaniu, oraz generatora kodu
+- po przyjrzeniu się zadaniu, stworzyłem sobie [listę pytań i decyzji do podjęcia](docs/todos.md)
+- skopiowałem template ADR chcąc tworzyć ADRy, by z nich w całości wygenerować kod
+- zagadnienia w wybranej przez siebie kolejności omawiałem z Claude Code, a podjęte decyzje dokumentowałem w ADRach (generowane, dlatego takie długie, ale dość trafnie oddają wnioski)
+- po zakończeniu omawiania najważniejszych zagadnień, pozostałe rozbiłem na [pojedyncze proste pytania](docs/adr/other_details_and_decisions.md) na które odpowiedziałem
+- następnie Claude [skompilował decyzje do jednego pliku](docs/decisions.md)
+- na podstawie pliku z decyzjami, iteracyjnie generowałem kod
+- następnie wygenerowałem load testy, które wykazały potrzebę tuningu (ilość workerów) oraz nieścisłości w implementacji vs decyzje (twarde limitowanie queue)
+- wprowadziłem poprawki
+- opisałem projekt w tym README.md
+
+## Architektura
+
+Webhooki są persystowane w SQLite przed przetwarzaniem, gwarantując **at-least-once** przetworzenie nawet w przypadku awarii.
 
 ```
 POST /webhooks
       │
       ▼
-SQLiteIdempotencyStore ──► events table (source of truth)
+SQLiteIdempotencyStore ──► tabela events
       │
       ▼ (if new)
-AsyncioEventQueue (bounded, in-process)
+AsyncioEventQueue
       │
       ▼
-N worker coroutines ──► mark_processing ──► [work] ──► mark_completed / mark_failed
+N asynchronicznych workerów ──► oznacz event jako processing ──► [sleep 2-5s] ──► oznacz completed/failed
 ```
 
-**Key components:**
+**Kluczowe komponenty**
 
-| Module | Responsibility |
-|---|---|
-| `router.py` | HTTP endpoints, idempotency check, backpressure (429) |
-| `store.py` | `SQLiteIdempotencyStore` — all DB access, retry scheduling |
-| `workers.py` | `worker` coroutines, `process_event`, startup `load_pending` |
-| `cleanup.py` | Background task — hard-deletes expired terminal events |
-| `metrics.py` | Prometheus counters/gauges/histograms |
-| `config.py` | `Settings` via `pydantic-settings` / env vars |
+| Moduł              | Odpowiedzialność                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `router.py`        | HTTP, idempotency check, backpressure (429)                                        |
+| `store.py`         | `SQLiteIdempotencyStore` — query do bazy, retry                                    |
+| `workers.py`       | workery, przetwarzanie eventów w `process_event`, logika startupu w `load_pending` |
+| `cleanup.py`       | Cyklicznie usuwa przedawnione eventy                                               |
+| `metrics.py`       | Metryki do prometeusza                                                             |
+| `config.py`        | `Settings` via `pydantic-settings` / konfifurowalne przez envy                     |
+| `logging_setup.py` | Konfiguracja logowania                                                             |
 
-## Key Tradeoffs
+## Konfiguracja
 
-- **At-least-once, not exactly-once** — events may be processed more than once after a crash and restart. Acceptable for a prototype; idempotent downstream handlers are assumed.
-- **Single SQLite connection (WAL mode)** — simple and sufficient for the target load (~1000 events/min). Upgrading to Postgres requires replacing `SQLiteIdempotencyStore` only.
-- **In-process asyncio queue** — zero infrastructure. Upgrading to Redis Streams requires replacing `AsyncioEventQueue` only (swappable via `EventQueue` Protocol).
-- **Bounded queue + 429** — backpressure is enforced at ingestion. Clients must retry on 429.
-- **Composite index `(status, created_at)`** — covers startup load, TTL cleanup, and monitoring queries. A leading `created_at` index would be needed if the API gains listing/pagination endpoints.
+Zmienne środowiskowe, nadpisywać w `mise.toml`
 
-## Configuration
+| Variable                 | Default           | Description                                                                  |
+| ------------------------ | ----------------- | ---------------------------------------------------------------------------- |
+| `DB_PATH`                | `/data/events.db` | SQLite file path                                                             |
+| `WORKER_COUNT`           | `85`              | Liczba workerów ~(1000 (requestów) / 60 (sekund) \* 5 (max processing time)) |
+| `QUEUE_MAXSIZE`          | `1000`            | Pojemność kolejki                                                            |
+| `MAX_ATTEMPTS`           | `5`               | Max liczba prób przetworzenia eventu                                         |
+| `RETRY_BASE_DELAY`       | `5.0`             | Exponential backoff base (seconds)                                           |
+| `RETRY_MAX_DELAY`        | `300.0`           | Backoff cap (seconds)                                                        |
+| `RETENTION_DAYS`         | `30`              | Ile dni trzymamy eventy                                                      |
+| `CLEANUP_INTERVAL_HOURS` | `1`               | Jak często uruchamiamy cleanup                                               |
+| `LOG_LEVEL`              | `INFO`            | Domyślny log level                                                           |
 
-All settings are read from environment variables:
+## Schemat bazy ##
 
-| Variable | Default | Description |
-|---|---|---|
-| `DB_PATH` | `/data/events.db` | SQLite file path |
-| `WORKER_COUNT` | `10` | Number of worker coroutines |
-| `QUEUE_MAXSIZE` | `1000` | In-process queue capacity |
-| `MAX_ATTEMPTS` | `5` | Max delivery attempts before dead-lettering |
-| `RETRY_BASE_DELAY` | `5.0` | Exponential backoff base (seconds) |
-| `RETRY_MAX_DELAY` | `300.0` | Backoff cap (seconds) |
-| `RETENTION_DAYS` | `30` | Days to keep completed/failed events |
-| `CLEANUP_INTERVAL_HOURS` | `1` | How often the cleanup task runs |
-| `LOG_LEVEL` | `INFO` | Python log level |
+Schemat bazy jest [dostępny tutaj](src/webhook_receiver/schema.sql)
 
-## Running locally
+* jedna tabelka, bo bardziej jest to inbox pattern, niż np. event sourcing.
+* 4 statusy: pending, processing, completed, failed
+  - pending - oczekuje na przetworzenie
+  - processing - jest przetwarzane, na wypadek awarii/restartu
+  - completed - przetworzony
+  - failed - przetwarzanie nie powiodło się
+* jeden indeks, bo ogarnia najcięższe wymienione w wymaganiach zapytania.
+
+## Jak uruchomić
+
+Trzeba mieć zainstalowane [mise](https://mise.jdx.dev/installing-mise.html)
 
 ```bash
 mise install
 start
 ```
 
-## Running with Docker
+Albo z Dockerem
 
 ```bash
-docker build -t webhook-receiver .
-docker run -p 8000:8000 -v webhook-data:/data webhook-receiver
+build_docker
+start_docker
 ```
 
-## Load testing
+[Interaktywne API](`http://localhost:8000/docs`)
+
+## Jak testować
+
+### Jednostkowo
 
 ```bash
-# in terminal 1
-start
-
-# in terminal 2
-locust_1000_headless  # or locust_final_headless for 1000/min and realistic traffic mix
+test
 ```
 
-## API
+### Obciążeniowo
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/webhooks` | Submit a webhook event |
-| `GET` | `/webhooks/{id}` | Get event status by internal ID |
-| `GET` | `/webhooks?idempotency_key=` | Get event status by idempotency key |
-| `GET` | `/health` | Liveness probe |
-| `GET` | `/ready` | Readiness probe (503 until startup load completes) |
-| `GET` | `/metrics` | Prometheus metrics |
-
-### POST /webhooks
-
-```json
-{ "idempotency_key": "evt-001", "event_type": "order.created", "payload": {} }
+```bash
+locust_1000_headless # testuje tylko POST /webhooks
+locust_final_headless # testuje POST /webhooks i GET /webhooks/{id}
 ```
 
-Returns `202 Accepted` for new events, `200 OK` for duplicates (returns existing status).
+Komendy bez `_headless` uruchamiają interaktywne UI Locusta.
 
-## Observability
+## Kluczowe decyzje i trade-offy
 
-Prometheus metrics exposed at `/metrics`:
+- **In-process asyncio queue** — czyli `asyncio.Queue` i mnogo workerów zapewniających rozdzielenie przyjmownia eventów od ich przetwarzania. Prosto bo prototyp, ale łatwo zastąpić na Redis Streams/RabbitMQ
+- **SQLiteIdempotencyStore** - pilnuje unikalności `idempotency_key`, zawsze pyta się bazy, bo trzeba zwracać aktualny status. Wydajność zapewnia `UNIQUE` na `idempotency_key`.
+- **At-least-once processing** — eventy mogą być przetworzone wiele razy w przypadku awarii/restartu, ale prościej jest
+- **Bounded queue + 429** — backpressure, kolejka nie powinna rosnąć w nieskończoność. Jednocześnie kolejka nie jest sama w sobie ograniczona, żeby nie powodować błędu przy starcie w sytuacji, gdy liczba nieprzetworzonych eventów w bazie przekracza wielkość kolejki
+- **Single SQLite connection + WAL mode** — szybszy przy współbieżnym dostępie (85 workerów + API)
+- **Composite index `(status, created_at)`** — pokrywa query na startupie, cleanup i zapytania dla monitoringu. Gdyby chcieć listować eventy, można jeszcze dodać index na samo `created_at` i/lub `updated_at`
+- **Hard delete** — usunięcie przeterminowanych eventów, nie ma soft delete. Jeśli chodzi o audytowalność, to można dodać append-only event log
+- **Rate limiting** - nie ma, bo moim zdaniem powinien być w reverse proxy (12-factor), reverse proxy nie chciałem robić w prototypie
 
-- `webhook_events_total{result}` — ingestion counter (`accepted` / `duplicate` / `rejected`)
-- `webhook_queue_depth` — current in-process queue size
-- `webhook_processing_duration_seconds` — processing latency histogram
-- `webhook_processing_errors_total` — processing error counter
+## Obserwowalność
 
-## TODO
+Metryki Prometheus pod `/metrics`:
 
-- **Rate limiting** — delegate to a reverse proxy (nginx/Traefik); `slowapi` for in-app if needed
-- **Trace/correlation IDs** — propagate `X-Request-ID` through logs and responses
-- **Exactly-once processing** — requires distributed locking or idempotent downstream consumers
-- **Redis Streams** — swap `AsyncioEventQueue` for a Redis-backed implementation to survive restarts with zero in-flight loss
-- **OpenTelemetry** — replace plain-text logging with structured traces and spans
-- **Pagination** — `GET /webhooks` listing with cursor-based pagination
+- `webhook_events_total{result}` — licznik eventów (`accepted` / `duplicate` / `rejected`)
+- `webhook_queue_depth` — długość kolejki
+- `webhook_processing_duration_seconds` — histogram czasu przetwarzania eventu
+- `webhook_processing_errors_total` — licznik błędów
+
+## Wnioski na przyszłość i TODOsy
+
+- (meta) nie jestem pewien, czy dobrze zinterpretowałem słowo "prototyp", i czy założenie minimalizacji infrastruktury było trafne, czy chodziło raczej o to, żeby zaprząc do pracy Redisa/RabbitMQ/RevProxy i tylko kodu nie dopieszczać
+- ten kod jest brzydki, ale działa, i jest szybki. Ale wymaga gruntownej restrukturyzacji (bo teraz płaska struktura) i refactoru.
+- logi są plain text, ale na prod bym użył OpenTelemetry i trace'ingu w logach 
+- żeby system był rozproszony i skalowalny, EventQueue oparłbym na Redis Streams i grupach konkurujących konsumentów dla at-least-once processing
+- możnaby też oprzeć IdempotencyStore o Redisa `idempotency_key:status`, pilnując, by workery aktualizowały status w Redisie, ale to z kolei wprowadza brak pojedynczego źródła prawdy i ryzyko inconsistency
+- możnaby dodać oddzielny append-only event log na wszystkie zdarzenia dt. przetwarzania eventów i usuwania starych
+- exactly-once processing gdyby użyć distributed locking
