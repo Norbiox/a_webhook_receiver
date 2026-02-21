@@ -14,7 +14,8 @@ class EventQueue(Protocol):
 
 class AsyncioEventQueue:
     def __init__(self, maxsize: int) -> None:
-        self._q: asyncio.Queue[str] = asyncio.Queue(maxsize=maxsize)
+        self._maxsize = maxsize
+        self._q: asyncio.Queue[str] = asyncio.Queue()  # unbounded — limit enforced by full()
 
     async def put(self, event_id: str) -> None:
         self._q.put_nowait(event_id)
@@ -23,7 +24,7 @@ class AsyncioEventQueue:
         return await self._q.get()
 
     def full(self) -> bool:
-        return self._q.full()
+        return self._q.qsize() >= self._maxsize
 
     def qsize(self) -> int:
         return self._q.qsize()

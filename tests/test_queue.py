@@ -1,7 +1,3 @@
-import asyncio
-
-import pytest
-
 from webhook_receiver.queue import AsyncioEventQueue
 
 
@@ -24,8 +20,12 @@ async def test_full() -> None:
     assert q.full() is True
 
 
-async def test_put_when_full_raises() -> None:
+async def test_put_beyond_maxsize_succeeds() -> None:
+    # maxsize is a soft limit checked only by the router via full().
+    # put() must never raise — startup load_pending must be able to enqueue
+    # all pending events regardless of the configured queue capacity.
     q = AsyncioEventQueue(maxsize=1)
     await q.put("evt-001")
-    with pytest.raises(asyncio.QueueFull):
-        await q.put("evt-002")
+    assert q.full() is True
+    await q.put("evt-002")  # must not raise
+    assert q.qsize() == 2
