@@ -32,7 +32,7 @@ _INGESTION_USERS = 5
 _RPS_PER_SENDER = 3.4  # 5 × 3.4 ≈ 17 req/s ≈ 1020 new webhooks/min
 _TOTAL_USERS = 20
 _RAMP_SECONDS = 10
-_HOLD_SECONDS = 60
+_HOLD_SECONDS = 180
 
 
 class ExternalSystem(HttpUser):
@@ -101,18 +101,6 @@ class StatusCheckUser(HttpUser):
 
 
 class FinalShape(LoadTestShape):
-    """
-    Ramp to _TOTAL_USERS over 10s, hold for 60s, then stop.
-
-    ExternalSystem has fixed_count=5 — always exactly 5 ingestion users.
-    The remaining 15 users are split between Duplicate (weight 1) and Status (weight 2).
-
-    Timeline:
-        0–10s   ramp 0 → 20 users
-        10–70s  hold at 20 users  ← measurement window
-        70s+    stop
-    """
-
     def tick(self) -> tuple[int, float] | None:
         t = self.get_run_time()
         if t < _RAMP_SECONDS:

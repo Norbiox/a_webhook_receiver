@@ -5,7 +5,7 @@ Requirement (docs/requirements.md):
     "~1000 webhooków/minutę z kilku systemów zewnętrznych"
     (~1000 webhooks/minute from several external systems)
 
-Target:  ~17 new unique POST /webhooks per second sustained for 60s
+Target:  ~17 new unique POST /webhooks per second sustained for 180s
 Pass criteria:
     - error rate < 1%  (queue-full 429s are counted as errors here — they mean
                          the service is rejecting load it should accept)
@@ -15,7 +15,7 @@ Run:
     uv run locust -f load_tests/locustfile_requirements.py --headless \\
         --run-time 90s --host http://localhost:8000
 
-The shape ramps to 5 concurrent senders in 10s, holds for 60s, then stops.
+The shape ramps to 5 concurrent senders in 10s, holds for 180s, then stops.
 Each sender uses constant_throughput(3.4) → 5 × 3.4 ≈ 17 req/s = 1020/min.
 """
 
@@ -45,18 +45,18 @@ class ExternalSystem(HttpUser):
 
 class RequirementsShape(LoadTestShape):
     """
-    Ramp to target concurrency over 10s, hold for 60s, then stop.
+    Ramp to target concurrency over 10s, hold for 180s, then stop.
 
     Timeline:
         0–10s   ramp from 0 → 5 users
-        10–70s  hold at 5 users  ← measurement window
-        70s+    stop (locust --run-time 90s handles the final teardown)
+        10–190s  hold at 5 users  ← measurement window
+        190s+    stop (locust --run-time 210s handles the final teardown)
     """
 
     def tick(self) -> tuple[int, float] | None:
         t = self.get_run_time()
         if t < 10:
             return (_SENDERS, _SENDERS / 10)  # ramp: target users, spawn rate
-        if t < 70:
+        if t < 190:
             return (_SENDERS, _SENDERS)  # hold
         return None  # stop

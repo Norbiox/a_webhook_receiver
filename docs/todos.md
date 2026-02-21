@@ -16,8 +16,8 @@ Topics to discuss and turn into ADRs.
 
 ## API Design
 
-- [ ] **Endpoint design** — POST /webhooks, GET /webhooks/{id} vs. GET /webhooks?idempotency_key=, response shapes
-- [ ] **HTTP response on duplicate** — 200, 202, or 409 for re-submitted idempotent events
+- [X] **Endpoint design** — POST /webhooks, GET /webhooks/{id} vs. GET /webhooks?idempotency_key=, response shapes
+- [X] **HTTP response on duplicate** — 200, 202, or 409 for re-submitted idempotent events
 
 ## Reliability & Concurrency
 
@@ -27,13 +27,13 @@ Topics to discuss and turn into ADRs.
 
 ## Observability
 
-- [ ] **Logging strategy** — structured logs, correlation IDs, log levels
-- [ ] **Metrics & health endpoints** — /health, /ready, Prometheus metrics (queue depth, processing latency)
+- [X] **Logging strategy** — structured logs, correlation IDs, log levels
+- [X] **Metrics & health endpoints** — /health, /ready, Prometheus metrics (queue depth, processing latency)
 
 ## Rate Limiting
 
-- [ ] **Rate limiting** — per-source IP or API key, in-app vs. reverse proxy
+- [X] **Rate limiting** — per-source IP or API key, in-app vs. reverse proxy
 
 ## Deployment
 
-- [ ] **Dockerfile & runtime config** — base image, config via env vars, SQLite file location
+- [X] **Dockerfile & runtime config** — base image, config via env vars, SQLite file location
